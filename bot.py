@@ -1,4 +1,5 @@
 import os
+import asyncio
 import tempfile
 import subprocess
 import threading
@@ -266,6 +267,10 @@ def main():
     t = threading.Thread(target=run_health_server, daemon=True)
     t.start()
     print("Bot started!")
+    asyncio.run(run_bot())
+
+
+async def run_bot():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
@@ -274,7 +279,10 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.VIDEO_NOTE, video_note_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    async with app:
+        await app.start()
+        await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
