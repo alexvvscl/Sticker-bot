@@ -1,13 +1,12 @@
 import os
 import tempfile
-import subprocess 
+import subprocess
+
 import imageio_ffmpeg
 os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
-
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
-from telegram.constants import ParseMode
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 
@@ -34,48 +33,46 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Добавить в существующий пак", callback_data="existing_pack")],
     ]
     await update.message.reply_text(
-        "Привет, " + user.first_name + "!\n\nЯ конвертирую видео-кружки в видео стикеры для Telegram.\n\nЧто хочешь сделать?",
+        "Привет, " + user.first_name + "! Я конвертирую видео-кружки в видео стикеры. Что хочешь сделать?",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Как пользоваться:\n\n1. Нажми /start\n2. Выбери — создать новый стикерпак или добавить в существующий\n3. После настройки — пересылай кружки боту\n\nКоманды:\n/start — главное меню\n/mypack — показать текущий стикерпак\n/reset — сбросить настройки"
+        "Команды:\n/start - главное меню\n/mypack - твой стикерпак\n/reset - сбросить настройки\n\nПросто пересылай кружки после настройки пака."
     )
 
 
 async def my_pack(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    state = get_user_state(user_id)
+    state = get_user_state(update.effective_user.id)
     if state["pack_name"]:
-        pack_link = "https://t.me/addstickers/" + state["pack_name"]
-        await update.message.reply_text("Твой стикерпак: " + state["pack_title"] + "\n\n" + pack_link)
+        await update.message.reply_text(
+            "Твой стикерпак: " + state["pack_title"] + "\nhttps://t.me/addstickers/" + state["pack_name"]
+        )
     else:
-        await update.message.reply_text("У тебя пока не выбран стикерпак. Нажми /start чтобы настроить.")
+        await update.message.reply_text("Стикерпак не выбран. Нажми /start")
 
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_states[user_id] = {"state": STATE_IDLE, "pack_name": None, "pack_title": None}
-    await update.message.reply_text("Настройки сброшены. Нажми /start чтобы начать заново.")
+    user_states[update.effective_user.id] = {"state": STATE_IDLE, "pack_name": None, "pack_title": None}
+    await update.message.reply_text("Сброшено. Нажми /start")
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
-    state = get_user_state(user_id)
+    state = get_user_state(query.from_user.id)
 
     if query.data == "new_pack":
         state["state"] = STATE_WAITING_PACK_NAME
         await query.edit_message_text(
-            "Создание нового стикерпака\n\nВведи короткое имя для стикерпака (только латинские буквы, цифры и _).\n\nПример: my_cool_stickers"
+            "Введи короткое имя для стикерпака (только латинские буквы, цифры и _).\nПример: my_stickers"
         )
     elif query.data == "existing_pack":
         state["state"] = STATE_WAITING_EXISTING_PACK
         await query.edit_message_text(
-            "Добавление в существующий стикерпак\n\nОтправь ссылку на стикерпак или его короткое имя.\n\nПример: https://t.me/addstickers/my_stickers"
+            "Отправь ссылку на стикерпак или его имя.\nПример: https://t.me/addstickers/my_stickers"
         )
 
 
@@ -86,17 +83,17 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if state["state"] == STATE_WAITING_PACK_NAME:
         import re
-        clean_name = re.sub(r"[^a-zA-Z0-9_]", "", text)
-        if len(clean_name) < 2:
-            await update.message.reply_text("Имя слишком короткое. Используй только латинские буквы, цифры и _")
+        clean = re.sub(r"[^a-zA-Z0-9_]", "", text)
+        if len(clean) < 2:
+            await update.message.reply_text("Слишком короткое или недопустимые символы. Только латиница, цифры, _")
             return
-        state["pack_name_short"] = clean_name
+        state["pack_name_short"] = clean
         state["state"] = STATE_WAITING_PACK_TITLE
-        await update.message.reply_text("Имя принято: " + clean_name + "\n\nТеперь введи название стикерпака.\n\nПример: Мои крутые стикеры")
+        await update.message.reply_text("Имя: " + clean + "\n\nТеперь введи название стикерпака (любое).\nПример: Мои стикеры")
 
     elif state["state"] == STATE_WAITING_PACK_TITLE:
         if len(text) < 2 or len(text) > 64:
-            await update.message.reply_text("Название должно быть от 2 до 64 символов.")
+            await update.message.reply_text("Название от 2 до 64 символов.")
             return
         state["pack_title"] = text
         await create_new_pack(update, context, state)
@@ -105,13 +102,10 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pack_name = text
         if "t.me/addstickers/" in text:
             pack_name = text.split("t.me/addstickers/")[-1].strip("/")
-        await try_connect_existing_pack(update, context, state, pack_name)
+        await try_connect_pack(update, context, state, pack_name)
 
     else:
-        if state["state"] == STATE_READY:
-            await update.message.reply_text("Отправь мне видео-кружок для конвертации!")
-        else:
-            await update.message.reply_text("Нажми /start чтобы настроить стикерпак.")
+        await update.message.reply_text("Нажми /start" if state["state"] == STATE_IDLE else "Отправь видео-кружок!")
 
 
 async def create_new_pack(update: Update, context: ContextTypes.DEFAULT_TYPE, state: dict):
@@ -121,8 +115,8 @@ async def create_new_pack(update: Update, context: ContextTypes.DEFAULT_TYPE, st
     pack_title = state["pack_title"]
     msg = await update.message.reply_text("Создаю стикерпак...")
     try:
-        placeholder_path = await generate_placeholder_sticker()
-        with open(placeholder_path, "rb") as f:
+        placeholder = await make_placeholder()
+        with open(placeholder, "rb") as f:
             await context.bot.create_new_sticker_set(
                 user_id=user_id,
                 name=pack_name,
@@ -130,27 +124,29 @@ async def create_new_pack(update: Update, context: ContextTypes.DEFAULT_TYPE, st
                 stickers=[{"sticker": f, "emoji_list": ["🎬"], "format": "video"}],
                 sticker_format="video",
             )
-        os.unlink(placeholder_path)
+        os.unlink(placeholder)
         state["pack_name"] = pack_name
         state["pack_title"] = pack_title
         state["state"] = STATE_READY
-        pack_link = "https://t.me/addstickers/" + pack_name
-        await msg.edit_text("Стикерпак создан!\n\nНазвание: " + pack_title + "\n\n" + pack_link + "\n\nТеперь просто пересылай мне видео-кружки!")
+        await msg.edit_text(
+            "Стикерпак создан!\n" + pack_title + "\nhttps://t.me/addstickers/" + pack_name + "\n\nТеперь пересылай мне кружки!"
+        )
     except Exception as e:
-        await msg.edit_text("Ошибка при создании стикерпака:\n" + str(e) + "\n\nПопробуй другое имя или нажми /start заново.")
+        await msg.edit_text("Ошибка: " + str(e) + "\n\nПопробуй другое имя или /start заново.")
 
 
-async def try_connect_existing_pack(update: Update, context: ContextTypes.DEFAULT_TYPE, state: dict, pack_name: str):
-    msg = await update.message.reply_text("Проверяю стикерпак...")
+async def try_connect_pack(update: Update, context: ContextTypes.DEFAULT_TYPE, state: dict, pack_name: str):
+    msg = await update.message.reply_text("Проверяю...")
     try:
-        sticker_set = await context.bot.get_sticker_set(pack_name)
+        s = await context.bot.get_sticker_set(pack_name)
         state["pack_name"] = pack_name
-        state["pack_title"] = sticker_set.title
+        state["pack_title"] = s.title
         state["state"] = STATE_READY
-        pack_link = "https://t.me/addstickers/" + pack_name
-        await msg.edit_text("Стикерпак подключён!\n\nНазвание: " + sticker_set.title + "\nСтикеров: " + str(len(sticker_set.stickers)) + "\n\n" + pack_link + "\n\nТеперь просто пересылай мне видео-кружки!")
+        await msg.edit_text(
+            "Подключено!\n" + s.title + "\nhttps://t.me/addstickers/" + pack_name + "\n\nПересылай кружки!"
+        )
     except Exception as e:
-        await msg.edit_text("Не удалось найти стикерпак " + pack_name + "\n\nОшибка: " + str(e))
+        await msg.edit_text("Не найден: " + pack_name + "\nОшибка: " + str(e))
 
 
 async def video_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -165,72 +161,66 @@ async def video_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Сначала настрой стикерпак!", reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
-    msg = await update.message.reply_text("Конвертирую кружок в стикер...")
-    video_note = update.message.video_note
-
+    msg = await update.message.reply_text("Конвертирую...")
     try:
-        file = await context.bot.get_file(video_note.file_id)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_path = os.path.join(tmpdir, "input.mp4")
-            output_path = os.path.join(tmpdir, "sticker.webm")
-            await file.download_to_drive(input_path)
-            success = await convert_to_sticker_webm(input_path, output_path)
-            if not success:
-                await msg.edit_text("Ошибка конвертации. Убедись, что кружок не длиннее 3 секунд.")
+        file = await context.bot.get_file(update.message.video_note.file_id)
+        with tempfile.TemporaryDirectory() as d:
+            inp = os.path.join(d, "in.mp4")
+            out = os.path.join(d, "out.webm")
+            await file.download_to_drive(inp)
+            ok = convert(inp, out)
+            if not ok:
+                await msg.edit_text("Ошибка конвертации. Кружок должен быть не длиннее 3 секунд.")
                 return
-            file_size = os.path.getsize(output_path)
-            if file_size > 256 * 1024:
-                await msg.edit_text("Файл слишком большой (" + str(file_size // 1024) + "KB, максимум 256KB).")
+            if os.path.getsize(out) > 256 * 1024:
+                await msg.edit_text("Файл слишком большой. Попробуй более короткий кружок.")
                 return
-            with open(output_path, "rb") as f:
+            with open(out, "rb") as f:
                 await context.bot.add_sticker_to_set(
                     user_id=user_id,
                     name=state["pack_name"],
                     sticker={"sticker": f, "emoji_list": ["🎬"], "format": "video"},
                 )
-            pack_link = "https://t.me/addstickers/" + state["pack_name"]
-            await msg.edit_text("Стикер добавлен!\n\n" + pack_link)
+        await msg.edit_text("Стикер добавлен!\nhttps://t.me/addstickers/" + state["pack_name"])
     except Exception as e:
-        error_text = str(e)
-        if "STICKERSET_INVALID" in error_text:
+        if "STICKERSET_INVALID" in str(e):
             state["state"] = STATE_IDLE
-            await msg.edit_text("Стикерпак не найден. Нажми /start чтобы настроить заново.")
+            await msg.edit_text("Стикерпак не найден. Нажми /start заново.")
         else:
-            await msg.edit_text("Ошибка: " + error_text)
+            await msg.edit_text("Ошибка: " + str(e))
 
 
-async def convert_to_sticker_webm(input_path, output_path):
+def convert(inp, out):
     try:
-        cmd = [
-            "ffmpeg", "-y", "-i", input_path, "-t", "3",
-            "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=512:512:flags=lanczos",
-            "-c:v", "libvpx-vp9", "-b:v", "400k", "-crf", "30",
-            "-an", "-pix_fmt", "yuva420p", "-deadline", "realtime", "-cpu-used", "8",
-            output_path
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        return result.returncode == 0 and os.path.exists(output_path)
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-i", inp, "-t", "3",
+             "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=512:512:flags=lanczos",
+             "-c:v", "libvpx-vp9", "-b:v", "400k", "-crf", "30",
+             "-an", "-pix_fmt", "yuva420p", "-deadline", "realtime", "-cpu-used", "8",
+             out],
+            capture_output=True, timeout=60
+        )
+        return r.returncode == 0 and os.path.exists(out)
     except Exception:
         return False
 
 
-async def generate_placeholder_sticker():
-    tmpfile = tempfile.NamedTemporaryFile(suffix=".webm", delete=False)
-    tmpfile.close()
-    cmd = [
-        "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=512x512:d=1",
-        "-c:v", "libvpx-vp9", "-b:v", "50k", "-an", "-pix_fmt", "yuva420p", "-t", "1",
-        tmpfile.name
-    ]
-    result = subprocess.run(cmd, capture_output=True, timeout=30)
-    if result.returncode != 0:
-        raise Exception("ffmpeg не найден")
-    return tmpfile.name
+async def make_placeholder():
+    f = tempfile.NamedTemporaryFile(suffix=".webm", delete=False)
+    f.close()
+    r = subprocess.run(
+        ["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=512x512:d=1",
+         "-c:v", "libvpx-vp9", "-b:v", "50k", "-an", "-pix_fmt", "yuva420p", "-t", "1", f.name],
+        capture_output=True, timeout=30
+    )
+    if r.returncode != 0:
+        raise Exception("ffmpeg не работает: " + r.stderr.decode())
+    return f.name
 
 
 def main():
     if not BOT_TOKEN:
-        print("Установи переменную окружения BOT_TOKEN")
+        print("Нет BOT_TOKEN!")
         return
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
