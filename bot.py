@@ -151,18 +151,18 @@ async def create_new_pack(update: Update, context: ContextTypes.DEFAULT_TYPE, st
     msg = await update.message.reply_text("Создаю стикерпак...")
     try:
         placeholder = await make_placeholder()
-        sticker = InputSticker(
-            sticker=open(placeholder, "rb"),
-            emoji_list=["\U0001f3ac"],
-            format="video",
-        )
-        await context.bot.create_new_sticker_set(
-            user_id=user_id,
-            name=pack_name,
-            title=pack_title,
-            stickers=[sticker],
-            sticker_format="video",
-        )
+        with open(placeholder, "rb") as f:
+            sticker = InputSticker(
+                sticker=f,
+                emoji_list=["\U0001f3ac"],
+                format="video",
+            )
+            await context.bot.create_new_sticker_set(
+                user_id=user_id,
+                name=pack_name,
+                title=pack_title,
+                stickers=[sticker],
+            )
         os.unlink(placeholder)
         state["pack_name"] = pack_name
         state["pack_title"] = pack_title
@@ -214,16 +214,17 @@ async def video_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if os.path.getsize(out) > 256 * 1024:
                 await msg.edit_text("Файл слишком большой. Попробуй короткий кружок.")
                 return
-            sticker = InputSticker(
-                sticker=open(out, "rb"),
-                emoji_list=["\U0001f3ac"],
-                format="video",
-            )
-            await context.bot.add_sticker_to_set(
-                user_id=user_id,
-                name=state["pack_name"],
-                sticker=sticker,
-            )
+            with open(out, "rb") as f:
+                sticker = InputSticker(
+                    sticker=f,
+                    emoji_list=["\U0001f3ac"],
+                    format="video",
+                )
+                await context.bot.add_sticker_to_set(
+                    user_id=user_id,
+                    name=state["pack_name"],
+                    sticker=sticker,
+                )
         await msg.edit_text("Стикер добавлен!\nhttps://t.me/addstickers/" + state["pack_name"])
     except Exception as e:
         if "STICKERSET_INVALID" in str(e):
