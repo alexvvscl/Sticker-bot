@@ -236,19 +236,25 @@ async def video_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 def convert_with_circle_mask(inp, out):
     try:
-        # Crop to square, scale to 512x512, apply circular alpha mask
+        # Step 1: crop+scale to 512x512
+        # Step 2: add alpha channel with circular mask using geq
         vf = (
             "crop=min(iw\\,ih):min(iw\\,ih),"
             "scale=512:512:flags=lanczos,"
             "format=yuva420p,"
-            "geq=lum='lum(X,Y)':a='if(lte(pow(X-256,2)+pow(Y-256,2),pow(256,2)),255,0)'"
+            "geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='255*lt(pow(X-256,2)+pow(Y-256,2),pow(255,2))'"
         )
         r = subprocess.run(
             [
                 "ffmpeg", "-y", "-i", inp, "-t", "3",
                 "-vf", vf,
-                "-c:v", "libvpx-vp9", "-b:v", "400k", "-crf", "30",
-                "-an", "-pix_fmt", "yuva420p", "-deadline", "realtime", "-cpu-used", "8",
+                "-c:v", "libvpx-vp9",
+                "-b:v", "0",
+                "-crf", "30",
+                "-auto-alt-ref", "0",
+                "-an",
+                "-deadline", "realtime",
+                "-cpu-used", "8",
                 out,
             ],
             capture_output=True,
@@ -262,16 +268,19 @@ def convert_with_circle_mask(inp, out):
 async def make_placeholder():
     f = tempfile.NamedTemporaryFile(suffix=".webm", delete=False)
     f.close()
-    # Create a circular placeholder
     vf = (
         "color=c=black:s=512x512:d=1,"
         "format=yuva420p,"
-        "geq=lum='lum(X,Y)':a='if(lte(pow(X-256,2)+pow(Y-256,2),pow(256,2)),255,0)'"
+        "geq=lum='0':cb='128':cr='128':a='255*lt(pow(X-256,2)+pow(Y-256,2),pow(255,2))'"
     )
     r = subprocess.run(
         [
             "ffmpeg", "-y", "-f", "lavfi", "-i", vf,
-            "-c:v", "libvpx-vp9", "-b:v", "50k", "-an", "-pix_fmt", "yuva420p", "-t", "1",
+            "-c:v", "libvpx-vp9",
+            "-b:v", "0",
+            "-crf", "30",
+            "-auto-alt-ref", "0",
+            "-an", "-t", "1",
             f.name,
         ],
         capture_output=True,
