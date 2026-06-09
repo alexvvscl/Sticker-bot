@@ -207,7 +207,7 @@ async def video_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             inp = os.path.join(d, "in.mp4")
             out = os.path.join(d, "out.webm")
             await file.download_to_drive(inp)
-            ok = convert(inp, out)
+            ok = convert_with_circle_mask(inp, out)
             if not ok:
                 await msg.edit_text("Ошибка конвертации. Кружок не длиннее 3 секунд.")
                 return
@@ -234,12 +234,19 @@ async def video_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await msg.edit_text("Ошибка: " + str(e))
 
 
-def convert(inp, out):
+def convert_with_circle_mask(inp, out):
     try:
+        # Crop to square, scale to 512x512, apply circular alpha mask
+        vf = (
+            "crop=min(iw\\,ih):min(iw\\,ih),"
+            "scale=512:512:flags=lanczos,"
+            "format=yuva420p,"
+            "geq=lum='lum(X,Y)':a='if(lte(pow(X-256,2)+pow(Y-256,2),pow(256,2)),255,0)'"
+        )
         r = subprocess.run(
             [
                 "ffmpeg", "-y", "-i", inp, "-t", "3",
-                "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=512:512:flags=lanczos",
+                "-vf", vf,
                 "-c:v", "libvpx-vp9", "-b:v", "400k", "-crf", "30",
                 "-an", "-pix_fmt", "yuva420p", "-deadline", "realtime", "-cpu-used", "8",
                 out,
@@ -255,9 +262,15 @@ def convert(inp, out):
 async def make_placeholder():
     f = tempfile.NamedTemporaryFile(suffix=".webm", delete=False)
     f.close()
+    # Create a circular placeholder
+    vf = (
+        "color=c=black:s=512x512:d=1,"
+        "format=yuva420p,"
+        "geq=lum='lum(X,Y)':a='if(lte(pow(X-256,2)+pow(Y-256,2),pow(256,2)),255,0)'"
+    )
     r = subprocess.run(
         [
-            "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=512x512:d=1",
+            "ffmpeg", "-y", "-f", "lavfi", "-i", vf,
             "-c:v", "libvpx-vp9", "-b:v", "50k", "-an", "-pix_fmt", "yuva420p", "-t", "1",
             f.name,
         ],
