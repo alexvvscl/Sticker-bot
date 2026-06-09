@@ -39,6 +39,8 @@ def get_user_state(user_id):
             "pending_video_path": None,
             "pending_video_duration": None,
             "pending_tmpdir": None,
+            "trim_start": None,
+            "trim_end": None,
         }
     return user_states[user_id]
 
@@ -100,6 +102,8 @@ async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "pending_video_path": None,
         "pending_video_duration": None,
         "pending_tmpdir": None,
+        "trim_start": None,
+        "trim_end": None,
     }
     await update.message.reply_text("Сброшено. Нажми /start")
 
@@ -155,17 +159,15 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             val = float(text.replace(",", "."))
             dur = state["pending_video_duration"]
             if val < 0 or val >= dur:
-                await update.message.reply_text(
-                    "Введи число от 0 до " + str(round(dur, 1))
-                )
+                await update.message.reply_text("Введи число от 0 до " + str(round(dur, 1)))
                 return
             state["trim_start"] = val
             state["state"] = STATE_WAITING_TRIM_END
             await update.message.reply_text(
-                "С " + str(val) + " сек.\n\nТеперь введи конечную секунду (макс 3 сек от начала).\nДлина видео: " + str(round(dur, 1)) + " сек."
+                "Начало: " + str(val) + " сек.\n\nТеперь введи конечную секунду (макс 3 сек от начала).\nДлина видео: " + str(round(dur, 1)) + " сек."
             )
         except ValueError:
-            await update.message.reply_text("Введи число, например: 1 или 1.5")
+            await update.message.reply_text("Введи число, например: 0 или 1.5")
 
     elif state["state"] == STATE_WAITING_TRIM_END:
         try:
@@ -296,8 +298,8 @@ async def video_note_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 state["pending_tmpdir"] = tmpdir
                 state["state"] = STATE_WAITING_TRIM_START
                 await msg.edit_text(
-                    "Длина видео: " + dur_str + " сек.\n\n"
-                    "Не удалось сжать до 256KB автоматически.\n"
+                    "Длина: " + dur_str + " сек.\n\n"
+                    "Не удалось сжать автоматически.\n"
                     "Введи начальную секунду для обрезки (например: 0):"
                 )
         else:
@@ -327,8 +329,8 @@ async def process_trimmed_video(update: Update, context: ContextTypes.DEFAULT_TY
             await add_sticker(update, context, state, msg, out)
         else:
             await msg.edit_text(
-                "Не удалось сжать до 256KB даже с обрезкой.\n"
-                "Попробуй выбрать более короткий отрезок (до 2 сек).\n\n"
+                "Не удалось сжать до 256KB.\n"
+                "Попробуй более короткий отрезок.\n\n"
                 "Введи начальную секунду снова:"
             )
             state["state"] = STATE_WAITING_TRIM_START
