@@ -237,7 +237,7 @@ def convert(inp, out):
         for crf in [30, 40, 50, 58]:
             r = subprocess.run(
                 [
-                    "ffmpeg", "-y", "-i", inp, "-t", "3",
+                    "ffmpeg", "-y", "-i", inp, "-t", "2.9",
                     "-vf", vf,
                     "-c:v", "libvpx-vp9",
                     "-b:v", "0", "-crf", str(crf),
